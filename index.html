@@ -365,10 +365,40 @@
         </div>
     </footer>
 
+    <!-- Admin/Data View Section (Added for Database Demonstration) -->
+    <div class="bg-slate-100 py-10 border-t border-slate-200">
+        <div class="max-w-4xl mx-auto px-4">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700"><i class="fa-solid fa-database mr-2"></i>Live Database View (Admin Demo)</h3>
+                <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Real-time Updates</span>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Name</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Guests</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Interest</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bookings-list" class="bg-white divide-y divide-slate-200">
+                            <!-- Data will be injected here -->
+                            <tr>
+                                <td colspan="4" class="px-6 py-4 text-center text-sm text-slate-400 italic">Waiting for data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase Configuration
         const firebaseConfig = JSON.parse(__firebase_config);
@@ -379,22 +409,6 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Authenticate User
-        const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-                console.log("Authenticated successfully");
-            } catch (error) {
-                console.error("Authentication failed", error);
-            }
-        };
-
-        initAuth();
-
         // DOM Elements
         const mobileBtn = document.getElementById('mobile-menu-btn');
         const mobileMenu = document.getElementById('mobile-menu');
@@ -404,6 +418,82 @@
         const errorMessage = document.getElementById('error-message');
         const userEmailSpan = document.getElementById('user-email');
         const submitBtn = document.getElementById('submitBtn');
+        const bookingsList = document.getElementById('bookings-list');
+
+        // Authenticate User & Setup Listener
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Authentication failed", error);
+            }
+        };
+
+        // Listen for Auth State to start Data Listener
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                console.log("User authenticated:", user.uid);
+                setupRealtimeListener();
+            } else {
+                initAuth();
+            }
+        });
+
+        // Real-time Data Listener
+        function setupRealtimeListener() {
+            // Rule 2 Compliance: Simple collection query, client-side sorting
+            const q = collection(db, 'artifacts', appId, 'public', 'data', 'tour_bookings');
+            
+            onSnapshot(q, (snapshot) => {
+                const bookings = [];
+                snapshot.forEach((doc) => {
+                    bookings.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Client-side sorting (Newest first)
+                bookings.sort((a, b) => {
+                    const dateA = a.submittedAt?.seconds || 0;
+                    const dateB = b.submittedAt?.seconds || 0;
+                    return dateB - dateA;
+                });
+
+                renderBookings(bookings);
+            }, (error) => {
+                console.error("Error getting bookings:", error);
+                bookingsList.innerHTML = `<tr><td colspan="4" class="px-6 py-4 text-center text-red-500 text-sm">Error loading data.</td></tr>`;
+            });
+        }
+
+        function renderBookings(bookings) {
+            if (bookings.length === 0) {
+                bookingsList.innerHTML = `<tr><td colspan="4" class="px-6 py-4 text-center text-sm text-slate-500">No bookings yet. Be the first!</td></tr>`;
+                return;
+            }
+
+            bookingsList.innerHTML = bookings.map(booking => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                        ${booking.firstName || 'Unknown'} ${booking.lastName || ''}
+                        <div class="text-xs text-slate-400 font-normal">${booking.email || ''}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                        ${booking.date || 'N/A'}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                            ${booking.guests} Guests
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500 capitalize">
+                        ${booking.academicInterest || '-'}
+                    </td>
+                </tr>
+            `).join('');
+        }
 
         // Mobile Menu Toggle
         mobileBtn.addEventListener('click', () => {
